@@ -48,9 +48,9 @@ err_t MyLinkoutputFn( struct netif* inp, struct pbuf* p ) {
 int ConnectToWiFi( int Timeout ) {
   uint32_t WhenToGiveUp = millis( ) + Timeout;
 
-  Serial.print( "Connecting to " );
-  Serial.print( SSID );
-  Serial.print( "..." );
+  Serial1.print( "Connecting to " );
+  Serial1.print( SSID );
+  Serial1.print( "..." );
   
   WiFi.begin( SSID, Password );
   WiFi.config( OurIPAddress, OurGateway, OurNetmask );
@@ -61,7 +61,7 @@ int ConnectToWiFi( int Timeout ) {
         return 1;
       }
       default: {
-        Serial.print( "." );
+        Serial1.print( "." );
         delay( 500 );
         
         continue;
@@ -94,24 +94,21 @@ void setup( void ) {
   }  
 
   Serial.begin( 115200 );
+  Serial1.begin( 115200 );
 
-  while ( ! Serial.availableForWrite( ) )
+  while ( ! Serial || ! Serial1 )
     yield( );
 
-  for ( i = 0; i < 32; i++ ) {
-    Serial.write( 0 );
-    delay( 1 );
-  }
-  
-  Serial.println( "\nReady..." );
+    
+  Serial1.println( "\nReady..." );
 
   do {
     IsConnectedToWiFi = ConnectToWiFi( 10000 );
   } while ( ! IsConnectedToWiFi );
 
-  Serial.println( " Connected!" );
-  Serial.print( "Local IP: " );
-  Serial.println( WiFi.localIP( ) );
+  Serial1.println( " Connected!" );
+  Serial1.print( "Local IP: " );
+  Serial1.println( WiFi.localIP( ) );
 
   WiFi.macAddress( OurMACAddress );
   OurIPAddress = WiFi.localIP( );

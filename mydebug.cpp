@@ -27,7 +27,7 @@ int DebugPrintf_UART( const char* Message, ... ) {
     Length = vsnprintf( DebugTextBuffer, sizeof( DebugTextBuffer ), Message, Argp );
     va_end( Argp );
 
-    Serial.write( DebugTextBuffer );
+    Serial1.write( DebugTextBuffer );
     return Length;
 }
 

@@ -16,6 +16,10 @@
  */
 static uint8_t PacketBuffer[ SLIPMaxPacketLen * 2 ];
 
+static uint8_t TXPacketBuffer[ SLIPMaxPacketLen * 2 ];
+static volatile int IsTXPacketQueued = 0;
+static volatile int TXPacketLength = 0;
+
 static int SLIPPacketLength = 0;
 static int IsInSLIPStream = 0;
 
@@ -56,18 +60,14 @@ int CopyByteToPacketBuffer( uint8_t Data ) {
  * Called every "frame" or run through the main loop. 
  */
 void SLIP_Tick( void ) {
-    static uint32_t Next = 0;
     uint8_t Buffer[ SerialBufferSize ];
     int BytesAvailable = 0;
     int BytesRead = 0;
     int i = 0;
 
-    if ( millis( ) >= Next ) {
-        DebugPrintf( "SLIP State: [IsInSLIP: %d], [Length: %d] [InEsc: %d]\n", IsInSLIPStream, SLIPPacketLength, IsInESC );
-        Next = millis( ) + 5000;
-    }
-
     if ( ( BytesAvailable = Serial.available( ) ) > 0 ) {
+        DebugPrintf( "%s: Reading %d bytes from UART...", __FUNCTION__, BytesAvailable );
+
         BytesRead = Serial.readBytes( Buffer, BytesAvailable );
 
         for ( i = 0; i < BytesRead; i++ ) {
@@ -88,69 +88,35 @@ void SLIP_Tick( void ) {
                     CopyByteToPacketBuffer( Buffer[ i ] );
             }
         }
+
+        DebugPrintf( " Done.\n" );
+    }
+
+    if ( IsTXPacketQueued ) {
+        SLIP_WritePacket( ( const uint8_t* ) TXPacketBuffer, TXPacketLength );
+
+        TXPacketLength = 0;
+        IsTXPacketQueued = 0;
     }
 }
 
-/*
-int SLIP_WritePacket( const uint8_t* Buffer, int Length ) {
-    uint8_t OutputBuffer[ SerialBufferSize ];
-    int BytesInOutputBuffer = 0;
-    int BytesWritten = 0;
-    uint32_t Start = 0;
+int SLIP_QueuePacketForWrite( const uint8_t* Buffer, int Length ) {
+    const uint8_t* Ptr = Buffer;
+    int Len = Length;
 
-    Start = millis( );
-    OutputBuffer[ BytesInOutputBuffer++ ] = SLIP_END;
+    DebugPrintf( "%s: %d bytes queued for write.\n", __FUNCTION__, Length );
 
-    while ( Length > 0 ) {
-        if ( BytesInOutputBuffer == SerialBufferSize ) {
-            Serial.write( OutputBuffer, SerialBufferSize );
-            Serial.flush( );
-
-            BytesWritten+= SerialBufferSize;
-            Length-= SerialBufferSize;
-            BytesInOutputBuffer = 0;
-
-            continue;
-        }
-
-        if ( *Buffer == SLIP_END ) {
-            Serial.write( OutputBuffer, BytesInOutputBuffer );
-            Serial.flush( );
-
-            BytesWritten+= BytesInOutputBuffer;
-            Length-= BytesInOutputBuffer;
-            BytesInOutputBuffer = 0;
-
-            OutputBuffer[ BytesInOutputBuffer++ ] = 219;
-            OutputBuffer[ BytesInOutputBuffer++ ] = 220;
-
-            BytesWritten+= 2;
-        }
-        else {
-            OutputBuffer[ BytesInOutputBuffer++ ] = *Buffer;
-            BytesWritten++;
-        }
-
-        Length--;
-        Buffer++;
+    if ( IsTXPacketQueued ) {
+        DebugPrintf( "%s: TX Buffer busy, dropping packet.\n", __FUNCTION__ );
+        return 0;
     }
 
-    if ( BytesInOutputBuffer == SerialBufferSize ) {
-        Serial.write( OutputBuffer, SerialBufferSize );
-        Serial.flush( );
-    }
-    else {
-        OutputBuffer[ BytesInOutputBuffer++ ] = SLIP_END;
+    memcpy( TXPacketBuffer, Ptr, Len );
+    TXPacketLength = Len;
+    IsTXPacketQueued = 1;
 
-        Serial.write( OutputBuffer, BytesInOutputBuffer );
-        Serial.flush( );
-    }
-
-    DebugPrintf( "%s: Took %dms\n", __FUNCTION__, ( int ) ( millis( ) - Start ) );
-
-    return BytesWritten;
+    return 1;
 }
-*/
 
 int SLIP_WritePacket( const uint8_t* Buffer, int Length ) {
     int BytesWritten = 0;
@@ -162,7 +128,7 @@ int SLIP_WritePacket( const uint8_t* Buffer, int Length ) {
     Serial.write( SLIP_END );
     BytesWritten++;
 
-    DebugPrintf( "%s: Writing %d bytes to UART... ", __FUNCTION__, Length );
+    DebugPrintf( "%s: Writing %d bytes to UART...", __FUNCTION__, Length );
 
     while ( Length > 0 ) {
         if ( *Buffer == SLIP_END ) {
@@ -184,9 +150,7 @@ int SLIP_WritePacket( const uint8_t* Buffer, int Length ) {
 
     End = millis( );
 
-    DebugPrintf( "done.\n" );
-    //DebugPrintf( "%s: Took %dms\n", __FUNCTION__, ( int ) ( End - Start ) );
-
+    DebugPrintf( " %d bytes written in %dms.\n", BytesWritten, ( int ) ( End - Start ) );
     return BytesWritten;
 }
 

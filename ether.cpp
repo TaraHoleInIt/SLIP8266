@@ -12,7 +12,7 @@ extern "C" {
 #include <user_interface.h>
 }
 
-#define ARPResponseTimeoutMS 20
+#define ARPResponseTimeoutMS 100
 #define ARPTableEntries 16
 
 static struct ARPEntry ARPTable[ ARPTableEntries ];
@@ -55,7 +55,7 @@ void OnDataReceived( const uint8_t* Data, int Length ) {
 
   switch ( htons( EHeader->LengthOrType ) ) {
     case EtherType_IPv4: {
-      SLIP_WritePacket( &Data[ sizeof( struct EtherFrame ) ], Length - sizeof( struct EtherFrame ) );
+      SLIP_QueuePacketForWrite( &Data[ sizeof( struct EtherFrame ) ], Length - sizeof( struct EtherFrame ) );
       //OnIPv4Packet( &Data[ sizeof( struct EtherFrame ) ], Length, ( const struct EtherFrame* ) Data );
       break;
     }

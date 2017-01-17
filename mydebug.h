@@ -1,9 +1,9 @@
 #ifndef _MYDEBUG_H_
 #define _MYDEBUG_H_
 
-// #define DEBUG_UART
+#define DEBUG_UART
 // #define DEBUG_ETHERFRAME
-#define DEBUG_UDP
+// #define DEBUG_UDP
 
 #if defined ( DEBUG_UART )
 #define DebugPrintf DebugPrintf_UART

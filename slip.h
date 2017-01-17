@@ -21,5 +21,6 @@ void SLIP_WritePacket_Blocking( WriteByteFn WriteByte, uint8_t* Packet, int Leng
 void SLIP_Tick( void );
 
 int SLIP_WritePacket( const uint8_t* Buffer, int Length );
+int SLIP_QueuePacketForWrite( const uint8_t* Buffer, int Length );
 
 #endif
