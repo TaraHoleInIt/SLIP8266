@@ -159,6 +159,12 @@ void SLIP_Tick( void ) {
                     SLIPPacketLength = 0;
                     IsInSLIPStream = 0;
                     PacketEndTime = 0;
+
+                    if ( i < BytesRead ) {
+                        memcpy( LeftoverBuffer, &Buffer[ i ], ( BytesRead - i ) );
+                        LeftoverBytes = ( BytesRead - i );
+                    }
+                    break;
                 }
             } else {
                 if ( IsInSLIPStream )
