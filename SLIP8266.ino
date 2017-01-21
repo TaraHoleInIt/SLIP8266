@@ -29,8 +29,38 @@ IPAddress OurIPAddress;
 IPAddress OurNetmask;
 IPAddress OurGateway;
 
+static uint8_t RXPacketBuffer[ 4096 ];
+static volatile int RXPacketLength = 0;
+static volatile int RXPacketBusy = 0;
+
+volatile int RXBytesRead = 0;
+volatile int RXBytesDropped = 0;
+
+volatile int TXBytesSent = 0;
+volatile int TXBytesDropped = 0;
+
+/*
+ * Called by the hardware WiFi stack whenever a packet is received. 
+ */
 err_t MyInputFn( struct pbuf* p, struct netif* inp ) {
-  OnDataReceived( ( const uint8_t* ) p->payload, p->len );
+  if ( p->len > sizeof( RXPacketBuffer ) ) {
+    DebugPrintf( "%s: RX Packet buffer would overrun!", __FUNCTION__ );
+    pbuf_free( p );
+
+    return 0;  
+  }
+
+  if ( RXPacketBusy ) {
+    DebugPrintf( "%s: Dropping %d bytes.\n", __FUNCTION__, p->len );
+    RXBytesDropped+= p->len;
+
+  } else {
+    memcpy( RXPacketBuffer, p->payload, p->len );
+    RXPacketLength = p->len;
+    RXPacketBusy = 1;
+    RXBytesRead+= p->len;
+  }
+
   pbuf_free( p );
   return 0;
 }
@@ -99,7 +129,8 @@ void setup( void ) {
   while ( ! Serial || ! Serial1 )
     yield( );
 
-    
+  Serial.setTimeout( 1 );
+
   Serial1.println( "\nReady..." );
 
   do {
@@ -121,20 +152,28 @@ void HeartBeat_Tick( void ) {
   uint32_t Now = millis( );
 
   if ( Now >= NextTick ) {
-   DebugPrintf( "%s: %d\n", __FUNCTION__, NextTick );
+   DebugPrintf( "%s: RX Bytes Read/Dropped [%d,%d] / TX Bytes Written/Dropped [%d,%d]\n", __FUNCTION__, RXBytesRead, RXBytesDropped, TXBytesSent, TXBytesDropped );
    NextTick = Now + SecondsToMS( 5 );
   }
 }
 
 void loop( void ) {
-  if ( IsConnectedToWiFi ) {
-    ARP_Tick( );
+  while ( 1 ) {
+    if ( IsConnectedToWiFi ) {
+      ARP_Tick( );
 
-    HeartBeat_Tick( );
-    SLIP_Tick( );
+      if ( RXPacketBusy ) {
+        OnDataReceived( RXPacketBuffer, RXPacketLength );
+        RXPacketLength = 0;
+        RXPacketBusy = 0;
+      }
+
+      HeartBeat_Tick( );
+      SLIP_Tick( );
+    }
+
+    yield( );
   }
-
-  yield( );
 }
 
 

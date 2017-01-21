@@ -28,7 +28,7 @@ struct udp_packet {
     uint16_t Checksum;
 };
 
-int PrepareTCPHeader( struct ip_packet* IPHeader, const uint32_t SourceIP, const uint32_t DestIP, int DataLength, int DontFragment );
+int PrepareTCPHeader( struct ip_packet* IPHeader, const uint32_t SourceIP, const uint32_t DestIP, int DataLength, int DontFragment, int Protocol );
 int PrepareUDPHeader( struct udp_packet* UDPHeader, uint16_t Port, int DataLength );
 int TCP_EtherEncapsulate( const uint8_t* Packet, int Length );
 int Route( uint32_t IPAddr, uint8_t* MACAddress );

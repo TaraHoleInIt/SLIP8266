@@ -92,7 +92,7 @@ err_t EtherWrite( void* Data, int Length ) {
  * Simple enough, call this to respond to an ARP request. 
  */
 static void ARP_RespondToRequest( struct ARPHeader* ARP ) {
-    static uint8_t Buffer[ 1024 ];
+    uint8_t Buffer[ 512 ];
     struct ARPHeader* Response = ( struct ARPHeader* ) &Buffer[ sizeof( struct EtherFrame ) ];
     struct EtherFrame* Frame = ( struct EtherFrame* ) Buffer;
 

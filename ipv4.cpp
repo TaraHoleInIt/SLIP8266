@@ -14,16 +14,15 @@ extern "C" {
 #include <user_interface.h>
 }
 
-static uint8_t TempBuffer[ 4096 ];
-
 int UDP_BuildOutgoingPacket( uint32_t SourceIP, uint32_t TargetIP, uint16_t Port, const uint8_t* Data, int DataLength ) {
+    uint8_t TempBuffer[ 2048 ];
     uint8_t DestinationMACAddress[ MACAddressLen ];
     uint8_t* BufferPtr = TempBuffer;
     int BytesToWrite = 0;
 
     if ( Route( TargetIP, DestinationMACAddress ) ) {
         BytesToWrite+= PrepareEthernetHeader( ( struct EtherFrame* ) TempBuffer, OurMACAddress, DestinationMACAddress, EtherType_IPv4 );
-        BytesToWrite+= PrepareTCPHeader( ( struct ip_packet* ) ( TempBuffer + BytesToWrite ), SourceIP, TargetIP, DataLength, 0 );
+        BytesToWrite+= PrepareTCPHeader( ( struct ip_packet* ) ( TempBuffer + BytesToWrite ), SourceIP, TargetIP, DataLength, 0, IP_PROTO_UDP );
         BytesToWrite+= PrepareUDPHeader( ( struct udp_packet* ) ( TempBuffer + BytesToWrite ), Port, DataLength );
 
         memcpy( ( TempBuffer + BytesToWrite ), Data, DataLength );
@@ -38,15 +37,15 @@ int UDP_BuildOutgoingPacket( uint32_t SourceIP, uint32_t TargetIP, uint16_t Port
     return 0;
 }
 
-int PrepareTCPHeader( struct ip_packet* IPHeader, const uint32_t SourceIP, const uint32_t DestIP, int DataLength, int DontFragment ) {
+int PrepareTCPHeader( struct ip_packet* IPHeader, const uint32_t SourceIP, const uint32_t DestIP, int DataLength, int DontFragment, int Protocol ) {
   IPHeader->HeaderLengthInWords = 5;
   IPHeader->Version = 4;
   IPHeader->TypeOfService = 0;
   IPHeader->Length = htons( DataLength + sizeof( struct ip_packet ) + sizeof( struct udp_packet ) );
   IPHeader->Identification = millis( ) & 0xFFFF;
   IPHeader->Fragment = htons( DontFragment ? 2 : 0 );
-  IPHeader->TimeToLive = 127;
-  IPHeader->Protocol = IP_PROTO_UDP;
+  IPHeader->TimeToLive = 64;
+  IPHeader->Protocol = Protocol;
   IPHeader->HeaderChecksum = 0;
   IPHeader->SourceIP = SourceIP;
   IPHeader->DestIP = DestIP;
@@ -66,7 +65,7 @@ int PrepareUDPHeader( struct udp_packet* UDPHeader, uint16_t Port, int DataLengt
 
 int TCP_EtherEncapsulate( const uint8_t* Packet, int Length ) {
   const struct ip_packet* IPHeader = ( const struct ip_packet* ) Packet;
-  static uint8_t Buffer[ 2048 ];
+  uint8_t Buffer[ 2048 ];
   struct EtherFrame* FrameHeader = ( struct EtherFrame* ) Buffer;
   int Local = 0;
 
@@ -215,7 +214,6 @@ void DHCPRequest( void ) {
 
     Buffer[ BytesToWrite++ ] = DHCP_Field_End;
 
-    //DebugPrintf( "Size of dhcp_packet: %d bytes.\n", ( int ) sizeof( struct dhcp_packet ) );
     UDP_BuildOutgoingPacket( IPAddress( 0, 0, 0, 0 ), IPAddress( 255, 255, 255, 255 ), DHCP_PORT, Buffer, BytesToWrite );
 }
 

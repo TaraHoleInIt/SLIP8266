@@ -14,12 +14,11 @@ extern "C" {
 #include <user_interface.h>
 }
 
-static char DebugTextBuffer[ 1024 ];
-
 /*
  * Sends a printf formatted string and arguments to the serial port. 
  */
 int DebugPrintf_UART( const char* Message, ... ) {
+    char DebugTextBuffer[ 512 ];
     int Length = 0;
     va_list Argp;
 
@@ -35,6 +34,7 @@ int DebugPrintf_UART( const char* Message, ... ) {
  * Sends a printf formatted string and arugments over WiFi with an ethertype of 0xBEEF. 
  */
 int DebugPrintf_EtherFrame( const char* Message, ... ) {
+    char DebugTextBuffer[ 512 ];
     struct EtherFrame* FrameHeader = ( struct EtherFrame* ) DebugTextBuffer;
     int Length = 0;
     int Offset = 0;
@@ -54,6 +54,7 @@ int DebugPrintf_EtherFrame( const char* Message, ... ) {
  * Sends a printf formatted string and arguments as a UDP broadcast to port 7810. 
  */
 int DebugPrintf_UDP( const char* Message, ... ) {
+    char DebugTextBuffer[ 512 ];
     int Length = 0;
     va_list Argp;
 
