@@ -14,10 +14,10 @@
  * I should hope that any de-escaped SLIP packet does not exceed
  * double the size of the maximum SLIP packet length. 
  */
-static uint8_t PacketBuffer[ SLIPMaxPacketLen * 4 ];
-static int SLIPPacketLength = 0;
+static uint8_t PacketBuffer[ SLIPMaxPacketLen * 2 ];
+static uint8_t SLIPBuffer[ SLIPMaxPacketLen * 2 ];
 
-static uint8_t TXPacketBuffer[ SLIPMaxPacketLen * 4 ];
+static uint8_t TXPacketBuffer[ SLIPMaxPacketLen * 2 ];
 static volatile int IsTXPacketQueued = 0;
 static volatile int TXPacketLength = 0;
 
@@ -27,15 +27,12 @@ uint32_t PacketEndTime = 0;
 extern volatile int TXBytesSent;
 extern volatile int TXBytesDropped;
 
-void SLIP_PacketComplete( void ) {
-    if ( SLIPPacketLength > 0 ) {
-        TCP_EtherEncapsulate( PacketBuffer, SLIPPacketLength );
-        DebugPrintf( "%s: %d byte SLIP Packet read in %dms.\n", __FUNCTION__, SLIPPacketLength, ( int ) ( PacketEndTime - PacketStartTime ) );
-    }
-
-    SLIPPacketLength = 0;
+void SLIP_PacketComplete( const uint8_t* Packet, int Length ) {
+    if ( Length > 0 )
+        TCP_EtherEncapsulate( Packet, Length );
 }
 
+#if 0
 int CopyByteToPacketBuffer( uint8_t Data ) {
     static int IsInESC = 0;
     int BytesWritten = 0;
@@ -60,11 +57,7 @@ int CopyByteToPacketBuffer( uint8_t Data ) {
 
     return 1;
 }
-
-static int IsInSLIPStream = 0;
-
-static uint8_t SLIPPacket[ SLIPMaxPacketLen * 2 ];
-static int SizeOfSLIPPacket = 0;
+#endif
 
 int UnSLIP( const uint8_t* Src, uint8_t* Dest, int Size ) {
     int OutSize = 0;
@@ -130,49 +123,65 @@ int ReadBytesWrapper( uint8_t* Buffer, int Length ) {
     return BytesRead;
 }
 
+int SLIP_ReadUntilEND( uint8_t* Buffer, int BufferMaxLen ) {
+    uint8_t RXBuffer[ 128 ];
+    int IsInSLIPStream = 0;
+    int BytesAvailable = 0;
+    int SLIPLength = 0;
+    int BytesRead = 0;
+    int i = 0;
+
+    IsInSLIPStream = 1;
+
+    while ( IsInSLIPStream ) {
+        BytesAvailable = AvailableWrapper( );
+
+        if ( BytesAvailable > 0 ) {
+            BytesRead = ReadBytesWrapper( RXBuffer, BytesAvailable > sizeof( RXBuffer ) ? sizeof( RXBuffer ) : BytesAvailable );
+
+            for ( i = 0; i < BytesRead; i++ ) {
+                if ( RXBuffer[ i ] == SLIP_END ) {
+                    PacketEndTime = millis( );
+                    IsInSLIPStream = 0;
+                    i++;
+
+                    DebugPrintf( "SLIP: UART Read %d bytes in %dms.\n", SLIPLength, ( int ) ( PacketEndTime - PacketStartTime ) );
+                    break;
+                }
+
+                Buffer[ SLIPLength++ ] = RXBuffer[ i ];
+            }
+
+            if ( i < BytesRead ) {
+                memcpy( LeftoverBuffer, &RXBuffer[ i ], ( BytesRead - i ) );
+                LeftoverBytes = ( BytesRead - i );
+            }
+        }
+    }
+
+    return SLIPLength;
+}
+
 /*
  * Called every "frame" or run through the main loop. 
  */
 void SLIP_Tick( void ) {
-    static uint8_t Buffer[ 1024 ];
-    int BytesAvailable = 0;
-    int BytesRead = 0;
-    int i = 0;
+    int SLIPLength = 0;
+    int PacketLength = 0;
+    uint8_t Data = 0;
 
-    if ( ( BytesAvailable = AvailableWrapper( ) ) > 0 ) {
-        //DebugPrintf( "%s: Reading %d bytes from UART...", __FUNCTION__, BytesAvailable );
-        BytesRead = ReadBytesWrapper( Buffer, BytesAvailable );
+    if ( Serial.readBytes( &Data, 1 ) == 1 && Data == SLIP_END ) {
+        PacketStartTime = millis( );
+        SLIPLength = SLIP_ReadUntilEND( SLIPBuffer, sizeof( SLIPBuffer ) );
 
-        for ( i = 0; i < BytesRead; i++ ) {
-            if ( Buffer[ i ] == SLIP_END ) {
-                if ( IsInSLIPStream == 0 ) {
-                    /* Start of new SLIP stream. */
-                    SLIPPacketLength = 0;
-                    IsInSLIPStream = 1;
-                    PacketStartTime = millis( );
-                } else {
-                    PacketEndTime = millis( );
+        if ( SLIPLength > 0 ) {
+            PacketLength = UnSLIP( SLIPBuffer, PacketBuffer, SLIPLength );
 
-                    /* End of SLIP stream. */
-                    SLIP_PacketComplete( );
+            if ( PacketLength > 0 )
+                SLIP_PacketComplete( PacketBuffer, SLIPLength );
 
-                    SLIPPacketLength = 0;
-                    IsInSLIPStream = 0;
-                    PacketEndTime = 0;
-
-                    if ( i < BytesRead ) {
-                        memcpy( LeftoverBuffer, &Buffer[ i ], ( BytesRead - i ) );
-                        LeftoverBytes = ( BytesRead - i );
-                    }
-                    break;
-                }
-            } else {
-                if ( IsInSLIPStream )
-                    CopyByteToPacketBuffer( Buffer[ i ] );
-            }
+            SLIPLength = 0;
         }
-
-        //DebugPrintf( " Done.\n" );
     }
 
     if ( IsTXPacketQueued ) {
@@ -180,7 +189,7 @@ void SLIP_Tick( void ) {
 
         TXPacketLength = 0;
         IsTXPacketQueued = 0;
-    }
+    }    
 }
 
 int SLIP_QueuePacketForWrite( const uint8_t* Buffer, int Length ) {
@@ -199,8 +208,6 @@ int SLIP_QueuePacketForWrite( const uint8_t* Buffer, int Length ) {
     
     TXPacketLength = Len;
     IsTXPacketQueued = 1;
-    
-    TXBytesSent+= Len;
 
     return 1;
 }
@@ -252,6 +259,7 @@ int SLIP_WritePacket( const uint8_t* Buffer, int Length ) {
     End = millis( );
     //DebugPrintf( "%s: Wrote %d bytes in %dms\n", __FUNCTION__, BytesWritten, ( int ) ( End - Start ) );
 
+    TXBytesSent+= BytesWritten;
     return BytesWritten;
 }
 

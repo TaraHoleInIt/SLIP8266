@@ -39,6 +39,52 @@ volatile int RXBytesDropped = 0;
 volatile int TXBytesSent = 0;
 volatile int TXBytesDropped = 0;
 
+struct BufferEntry {
+  uint8_t Buffer[ 2048 ];
+  volatile int Length;
+};
+
+#define PacketBufferCount 6
+
+static struct BufferEntry PacketBuffers[ PacketBufferCount ];
+volatile static struct BufferEntry* BufferHead = &PacketBuffers[ PacketBufferCount - 1 ];
+volatile static struct BufferEntry* BufferTail = &PacketBuffers[ 0 ];
+
+int AddBufferToRing( uint8_t* Buffer, int Length ) {
+  int Result = 0;
+
+  if ( ! BufferHead->Length ) 
+    Result = 1;
+
+  memcpy( ( void* ) BufferHead->Buffer, Buffer, Length );
+
+  BufferHead->Length = Length;
+  BufferHead++;
+
+  if ( BufferHead >= &PacketBuffers[ PacketBufferCount ] )
+    BufferHead = &PacketBuffers[ 0 ];
+
+  return Result;
+}
+
+int PlaybackBuffer( void ) {
+  int Result = 0;
+
+  if ( BufferTail->Length ) {
+    OnDataReceived( ( const uint8_t* ) BufferTail->Buffer, BufferTail->Length );
+    BufferTail->Length = 0;
+
+    Result = 1;
+  }
+
+  BufferTail++;
+
+  if ( BufferTail >= &PacketBuffers[ PacketBufferCount ] )
+    BufferTail = &PacketBuffers[ 0 ];
+
+  return 0;
+}
+
 /*
  * Called by the hardware WiFi stack whenever a packet is received. 
  */
@@ -50,8 +96,9 @@ err_t MyInputFn( struct pbuf* p, struct netif* inp ) {
     return 0;  
   }
 
+/*
   if ( RXPacketBusy ) {
-    DebugPrintf( "%s: Dropping %d bytes.\n", __FUNCTION__, p->len );
+    //DebugPrintf( "%s: Dropping %d bytes.\n", __FUNCTION__, p->len );
     RXBytesDropped+= p->len;
 
   } else {
@@ -59,6 +106,18 @@ err_t MyInputFn( struct pbuf* p, struct netif* inp ) {
     RXPacketLength = p->len;
     RXPacketBusy = 1;
     RXBytesRead+= p->len;
+  }
+*/
+  if ( p->len > sizeof( BufferHead->Buffer ) ) {
+    RXBytesDropped+= p->len;
+    DebugPrintf( "len > buffer size!\n" );
+  } else {
+    if ( AddBufferToRing( ( uint8_t* ) p->payload, p->len ) == 0 ) {
+      DebugPrintf( "Overwrote packet in ring buffer!\n" );
+      RXBytesDropped+= p->len;
+    } else {
+      RXBytesRead+= p->len;
+    }
   }
 
   pbuf_free( p );
@@ -107,6 +166,8 @@ int ConnectToWiFi( int Timeout ) {
 void setup( void ) {
   int i = 0;
 
+  memset( PacketBuffers, 0, sizeof( PacketBuffers ) );
+
   OurIPAddress = IPAddress( 192, 168, 2, 177 );
   OurNetmask = IPAddress( 255, 255, 255, 0 );
   OurGateway = IPAddress( 192, 168, 2, 1 );
@@ -129,9 +190,8 @@ void setup( void ) {
   while ( ! Serial || ! Serial1 )
     yield( );
 
-  Serial.setTimeout( 1 );
-
   Serial1.println( "\nReady..." );
+  Serial.setTimeout( 1 );
 
   do {
     IsConnectedToWiFi = ConnectToWiFi( 10000 );
@@ -162,11 +222,17 @@ void loop( void ) {
     if ( IsConnectedToWiFi ) {
       ARP_Tick( );
 
+      /*
       if ( RXPacketBusy ) {
         OnDataReceived( RXPacketBuffer, RXPacketLength );
+
         RXPacketLength = 0;
         RXPacketBusy = 0;
       }
+      */
+
+      while ( PlaybackBuffer( ) )
+        yield( );
 
       HeartBeat_Tick( );
       SLIP_Tick( );

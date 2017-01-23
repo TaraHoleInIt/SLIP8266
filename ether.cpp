@@ -52,10 +52,13 @@ int PrepareEthernetHeader( struct EtherFrame* FrameHeader, const uint8_t* Source
  */
 void OnDataReceived( const uint8_t* Data, int Length ) {
   struct EtherFrame* EHeader = ( struct EtherFrame* ) Data;
+  // struct ip_packet* IPHeader = ( struct ip_packet* ) &Data[ sizeof( struct EtherFrame ) ];
 
   switch ( htons( EHeader->LengthOrType ) ) {
     case EtherType_IPv4: {
-      SLIP_QueuePacketForWrite( &Data[ sizeof( struct EtherFrame ) ], Length - sizeof( struct EtherFrame ) );
+     // if ( IPHeader->DestIP == OurIPAddress )
+        SLIP_QueuePacketForWrite( &Data[ sizeof( struct EtherFrame ) ], Length - sizeof( struct EtherFrame ) );
+
       //OnIPv4Packet( &Data[ sizeof( struct EtherFrame ) ], Length, ( const struct EtherFrame* ) Data );
       break;
     }
