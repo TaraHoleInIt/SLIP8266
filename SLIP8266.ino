@@ -44,7 +44,7 @@ struct BufferEntry {
   volatile int Length;
 };
 
-#define PacketBufferCount 6
+#define PacketBufferCount 8
 
 static struct BufferEntry PacketBuffers[ PacketBufferCount ];
 volatile static struct BufferEntry* BufferHead = &PacketBuffers[ PacketBufferCount - 1 ];
@@ -89,48 +89,49 @@ int PlaybackBuffer( void ) {
  * Called by the hardware WiFi stack whenever a packet is received. 
  */
 err_t MyInputFn( struct pbuf* p, struct netif* inp ) {
-  if ( p->len > sizeof( RXPacketBuffer ) ) {
-    DebugPrintf( "%s: RX Packet buffer would overrun!", __FUNCTION__ );
-    pbuf_free( p );
+  struct pbuf* Ptr = NULL;
+  struct pbuf* Temp = NULL;
+  int Count = 0;
 
-    return 0;  
-  }
+  noInterrupts( );
 
-/*
-  if ( RXPacketBusy ) {
-    //DebugPrintf( "%s: Dropping %d bytes.\n", __FUNCTION__, p->len );
-    RXBytesDropped+= p->len;
-
-  } else {
-    memcpy( RXPacketBuffer, p->payload, p->len );
-    RXPacketLength = p->len;
-    RXPacketBusy = 1;
-    RXBytesRead+= p->len;
-  }
-*/
-  if ( p->len > sizeof( BufferHead->Buffer ) ) {
-    RXBytesDropped+= p->len;
-    DebugPrintf( "len > buffer size!\n" );
-  } else {
-    if ( AddBufferToRing( ( uint8_t* ) p->payload, p->len ) == 0 ) {
-      DebugPrintf( "Overwrote packet in ring buffer!\n" );
-      RXBytesDropped+= p->len;
+  for ( Ptr = p; Ptr; Count++ ) {
+    if ( Ptr->len > sizeof( BufferHead->Buffer ) ) {
+      RXBytesDropped+= Ptr->len;
+      DebugPrintf( "len > buffer size!\n" );
     } else {
-      RXBytesRead+= p->len;
+      if ( AddBufferToRing( ( uint8_t* ) Ptr->payload, Ptr->len ) == 0 ) {
+        DebugPrintf( "Overwrote packet in ring buffer!\n" );
+        RXBytesDropped+= Ptr->len;
+      } else {
+        RXBytesRead+= Ptr->len;
+      }
     }
+
+    Temp = Ptr->next;
+    pbuf_free( Ptr );
+    Ptr = Temp;
   }
 
-  pbuf_free( p );
+  //DebugPrintf( "Processed %d pbufs\n", Count );
+
+  interrupts( );
   return 0;
 }
 
 err_t MyOutputFn( struct netif* inp, struct pbuf* p, ip_addr_t* ipaddr ) {
+  noInterrupts( );
   pbuf_free( p );
+  interrupts( );
+
   return 0;
 }
 
 err_t MyLinkoutputFn( struct netif* inp, struct pbuf* p ) {
+  noInterrupts( );
   pbuf_free( p );
+  interrupts( );
+
   return 0;
 }
 
@@ -191,7 +192,7 @@ void setup( void ) {
     yield( );
 
   Serial1.println( "\nReady..." );
-  Serial.setTimeout( 1 );
+  Serial.setTimeout( 0 );
 
   do {
     IsConnectedToWiFi = ConnectToWiFi( 10000 );
@@ -213,8 +214,9 @@ void HeartBeat_Tick( void ) {
 
   if ( Now >= NextTick ) {
    DebugPrintf( "%s: RX Bytes Read/Dropped [%d,%d] / TX Bytes Written/Dropped [%d,%d]\n", __FUNCTION__, RXBytesRead, RXBytesDropped, TXBytesSent, TXBytesDropped );
-   NextTick = Now + SecondsToMS( 5 );
+   NextTick = Now + SecondsToMS( 10 );
   }
+
 }
 
 void loop( void ) {
@@ -222,17 +224,10 @@ void loop( void ) {
     if ( IsConnectedToWiFi ) {
       ARP_Tick( );
 
-      /*
-      if ( RXPacketBusy ) {
-        OnDataReceived( RXPacketBuffer, RXPacketLength );
-
-        RXPacketLength = 0;
-        RXPacketBusy = 0;
-      }
-      */
-
-      while ( PlaybackBuffer( ) )
+      while ( PlaybackBuffer( ) ) {
+        SLIP_Tick( );
         yield( );
+      }
 
       HeartBeat_Tick( );
       SLIP_Tick( );

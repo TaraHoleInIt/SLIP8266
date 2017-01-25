@@ -12,8 +12,8 @@ extern "C" {
 #include <user_interface.h>
 }
 
-#define ARPResponseTimeoutMS 100
-#define ARPTableEntries 16
+#define ARPResponseTimeoutMS 250
+#define ARPTableEntries 10
 
 static struct ARPEntry ARPTable[ ARPTableEntries ];
 
@@ -52,13 +52,14 @@ int PrepareEthernetHeader( struct EtherFrame* FrameHeader, const uint8_t* Source
  */
 void OnDataReceived( const uint8_t* Data, int Length ) {
   struct EtherFrame* EHeader = ( struct EtherFrame* ) Data;
-  // struct ip_packet* IPHeader = ( struct ip_packet* ) &Data[ sizeof( struct EtherFrame ) ];
+  struct ip_packet* IPHeader = ( struct ip_packet* ) &Data[ sizeof( struct EtherFrame ) ];
 
   switch ( htons( EHeader->LengthOrType ) ) {
     case EtherType_IPv4: {
-     // if ( IPHeader->DestIP == OurIPAddress )
-        SLIP_QueuePacketForWrite( &Data[ sizeof( struct EtherFrame ) ], Length - sizeof( struct EtherFrame ) );
+      if ( IPHeader->DestIP == OurIPAddress )
+        SLIP_WritePacket( &Data[ sizeof( struct EtherFrame ) ], Length - sizeof( struct EtherFrame ) );
 
+      //SLIP_QueuePacketForWrite( &Data[ sizeof( struct EtherFrame ) ], Length - sizeof( struct EtherFrame ) );
       //OnIPv4Packet( &Data[ sizeof( struct EtherFrame ) ], Length, ( const struct EtherFrame* ) Data );
       break;
     }
@@ -79,7 +80,7 @@ err_t EtherWrite( void* Data, int Length ) {
   struct pbuf* OutPBuf = NULL;
   err_t Result = ERR_OK;
 
-  OutPBuf = pbuf_alloc( PBUF_LINK, Length, PBUF_POOL );
+  OutPBuf = pbuf_alloc( PBUF_LINK, Length, PBUF_RAM );
 
   if ( OutPBuf ) {
     memcpy( OutPBuf->payload, Data, Length );

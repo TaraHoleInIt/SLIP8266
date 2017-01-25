@@ -9,6 +9,8 @@
 
 #define SerialBufferSize 64
 
+#define DetailDebug( Message ) DebugPrintf( "%s::%s::%d: %s", __FILE__, __FUNCTION__, __LINE__, Message );
+
 /*
  * HACKHACKHACK
  * I should hope that any de-escaped SLIP packet does not exceed
@@ -124,7 +126,8 @@ int ReadBytesWrapper( uint8_t* Buffer, int Length ) {
 }
 
 int SLIP_ReadUntilEND( uint8_t* Buffer, int BufferMaxLen ) {
-    uint8_t RXBuffer[ 128 ];
+    uint8_t RXBuffer[ 256 ];
+    uint8_t Data = 0;
     int IsInSLIPStream = 0;
     int BytesAvailable = 0;
     int SLIPLength = 0;
@@ -133,6 +136,23 @@ int SLIP_ReadUntilEND( uint8_t* Buffer, int BufferMaxLen ) {
 
     IsInSLIPStream = 1;
 
+    while ( IsInSLIPStream == 1 ) {
+        BytesRead = Serial.readBytes( &Data, 1 );
+
+        if ( BytesRead == 1 ) {
+            if ( Data == SLIP_END ) {
+                PacketEndTime = millis( );
+                IsInSLIPStream = 0;
+
+                if ( SLIPLength > 0 )
+                    DebugPrintf( "SLIP: UART Read %d bytes in %dms.\n", SLIPLength, ( int ) ( PacketEndTime - PacketStartTime ) );
+            } else {
+                Buffer[ SLIPLength++ ] = Data;
+            }
+        }
+    }
+
+/*
     while ( IsInSLIPStream ) {
         BytesAvailable = AvailableWrapper( );
 
@@ -143,13 +163,13 @@ int SLIP_ReadUntilEND( uint8_t* Buffer, int BufferMaxLen ) {
                 if ( RXBuffer[ i ] == SLIP_END ) {
                     PacketEndTime = millis( );
                     IsInSLIPStream = 0;
-                    i++;
 
                     DebugPrintf( "SLIP: UART Read %d bytes in %dms.\n", SLIPLength, ( int ) ( PacketEndTime - PacketStartTime ) );
                     break;
                 }
 
-                Buffer[ SLIPLength++ ] = RXBuffer[ i ];
+                if ( ( SLIPLength + 1 ) < BufferMaxLen )
+                    Buffer[ SLIPLength++ ] = RXBuffer[ i ];
             }
 
             if ( i < BytesRead ) {
@@ -158,6 +178,7 @@ int SLIP_ReadUntilEND( uint8_t* Buffer, int BufferMaxLen ) {
             }
         }
     }
+*/
 
     return SLIPLength;
 }
@@ -184,12 +205,14 @@ void SLIP_Tick( void ) {
         }
     }
 
+/*
     if ( IsTXPacketQueued ) {
         SLIP_WritePacket( ( const uint8_t* ) TXPacketBuffer, TXPacketLength );
 
         TXPacketLength = 0;
         IsTXPacketQueued = 0;
-    }    
+    }
+*/
 }
 
 int SLIP_QueuePacketForWrite( const uint8_t* Buffer, int Length ) {
@@ -242,19 +265,25 @@ int SLIP_WritePacket( const uint8_t* Buffer, int Length ) {
 
     Start = millis( );
 
-    Serial.flush( );
+    //Serial.flush( );
 
     if ( ( BytesSLIPPED = SLIP( Buffer, Length, OutBuffer, sizeof( OutBuffer ) ) ) > 0 ) {
         while ( BytesSLIPPED > 0 ) {
+            /*
             Temp = Serial.write( BufPtr, BytesSLIPPED >= 64 ? 64 : BytesSLIPPED );
 
             BytesWritten+= Temp;
             BytesSLIPPED-= Temp;
             BufPtr+= Temp;
+            */
+            Serial.write( *BufPtr++ );
+            
+            BytesSLIPPED--;
+            BytesWritten++;
         }
     }
 
-    Serial.flush( );
+    //Serial.flush( );
 
     End = millis( );
     //DebugPrintf( "%s: Wrote %d bytes in %dms\n", __FUNCTION__, BytesWritten, ( int ) ( End - Start ) );
